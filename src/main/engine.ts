@@ -135,15 +135,14 @@ export async function repackAssets(
   win: BrowserWindow,
   settings: Settings,
   input: string,
-  entries: EngineEntry[],
-  outputDir: string
+  entries: EngineEntry[]
 ): Promise<EngineResult> {
   const resolved = requireEngine(settings)
   if (!resolved.ok) return resolved.result
 
   const translations = join(app.getPath('temp'), `uniphrase-repack-${Date.now()}.json`)
   writeFileSync(translations, JSON.stringify(entries))
-  const args = ['repack', '--input', input, '--translations', translations, '--output', outputDir, ...classDataArgs(settings)]
+  const args = ['repack', '--input', input, '--translations', translations, ...classDataArgs(settings)]
   try {
     const result = await runEngine(resolved.engine, args, win)
     if (result.cancelled) return { ok: false, message: 'Repack cancelled.' }
@@ -153,7 +152,7 @@ export async function repackAssets(
       ok: true,
       message: done?.message ?? 'Repack finished.',
       applied: done?.applied ?? done?.count,
-      outputPath: outputDir
+      outputPath: done?.output ?? input
     }
   } finally {
     rmSync(translations, { force: true })
@@ -163,7 +162,7 @@ export async function repackAssets(
 function requireEngine(settings: Settings): { ok: true; engine: ResolvedEngine } | { ok: false; result: EngineResult } {
   const engine = resolveEngine(settings.enginePath)
   if (!engine) {
-    return { ok: false, result: { ok: false, message: 'Engine not found. Open Settings or run npm run engine:publish.' } }
+    return { ok: false, result: { ok: false, message: 'Engine not found. Run npm run engine:publish.' } }
   }
   return { ok: true, engine }
 }

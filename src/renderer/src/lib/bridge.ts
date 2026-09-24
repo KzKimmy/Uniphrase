@@ -1,4 +1,5 @@
 import type {
+  AiResult,
   EngineEvent,
   EngineProbe,
   EngineResult,
@@ -9,6 +10,7 @@ import type {
   Settings,
   UniphraseApi
 } from '@shared/contracts'
+import { defaultSettings } from '@shared/contracts'
 
 const sessionKey = 'uniphrase-session'
 const settingsKey = 'uniphrase-settings'
@@ -51,9 +53,18 @@ function browserApi(): UniphraseApi {
       ok: false,
       message: 'Repack runs in the Electron app.'
     }),
+    translateAi: async (): Promise<AiResult> => ({
+      ok: false,
+      message: 'AI translation runs in the Electron app.'
+    }),
+    testAi: async (): Promise<AiResult> => ({
+      ok: false,
+      message: 'AI translation runs in the Electron app.'
+    }),
     cancelEngine: async () => undefined,
+    cancelAi: async () => undefined,
     onEngineEvent: (_listener: (event: EngineEvent) => void) => () => undefined,
-    getSettings: async () => readJson<Settings>(settingsKey, { enginePath: '', classDataPath: '' }),
+    getSettings: async () => readJson<Settings>(settingsKey, { ...defaultSettings }),
     setSettings: async (settings) => {
       localStorage.setItem(settingsKey, JSON.stringify(settings))
       return settings

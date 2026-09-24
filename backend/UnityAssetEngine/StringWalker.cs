@@ -10,6 +10,35 @@ static class StringWalker
 {
     static readonly Regex GuidPattern = new("^[0-9a-fA-F]{32}$", RegexOptions.Compiled);
     static readonly Regex HexPattern = new("^[0-9a-fA-F]{16,}$", RegexOptions.Compiled);
+    static readonly HashSet<string> SkipLeaves = new(StringComparer.Ordinal)
+    {
+        "m_Name",
+        "m_EditorClassIdentifier",
+        "m_Script",
+        "m_CorrespondingSourceObject",
+        "m_TagString",
+        "m_NormalTrigger",
+        "m_HighlightedTrigger",
+        "m_PressedTrigger",
+        "m_SelectedTrigger",
+        "m_DisabledTrigger",
+        "m_MethodName",
+        "m_TargetAssemblyTypeName",
+        "m_FamilyName",
+        "m_StyleName",
+        "m_OpeningDefinition",
+        "m_ClosingDefinition",
+        "m_HorizontalAxis",
+        "m_VerticalAxis",
+        "m_SubmitButton",
+        "m_CancelButton",
+        "m_defaultFontAssetPath",
+        "m_defaultSpriteAssetPath",
+        "m_defaultColorGradientPresetsPath",
+        "SourceId",
+        "DestinationId",
+        "encryptionPassword"
+    };
 
     public static List<StringHit> Collect(AssetTypeValueField root)
     {
@@ -78,10 +107,16 @@ static class StringWalker
         if (hash >= 0)
             leaf = leaf[..hash];
 
-        if (leaf is "m_Name" or "m_EditorClassIdentifier" or "m_Script" or "m_CorrespondingSourceObject" or "m_TagString")
+        if (SkipLeaves.Contains(leaf))
+            return false;
+        if (fieldPath.Contains("/_rig/", StringComparison.Ordinal) || fieldPath.StartsWith("_rig/", StringComparison.Ordinal))
+            return false;
+        if (fieldPath.Contains("assemblyNames/", StringComparison.Ordinal) || fieldPath.Contains("spriteInfoList/", StringComparison.Ordinal))
             return false;
 
         var trimmed = value.Trim();
+        if (HasUnreadableCharacters(trimmed))
+            return false;
         if (trimmed.Length is < 2 or > 100_000)
             return false;
         if (!trimmed.Any(char.IsLetter))
@@ -195,6 +230,19 @@ static class StringWalker
 
     static string NameOf(AssetTypeValueField field) =>
         string.IsNullOrEmpty(field.FieldName) ? "data" : field.FieldName;
+
+    static bool HasUnreadableCharacters(string value)
+    {
+        foreach (var character in value)
+        {
+            if (character == '\uFFFD')
+                return true;
+            if (char.IsControl(character) && character is not '\n' and not '\r' and not '\t')
+                return true;
+        }
+
+        return false;
+    }
 
     static bool LooksLikeAssetPath(string value)
     {

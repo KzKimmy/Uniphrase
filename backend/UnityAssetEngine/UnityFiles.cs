@@ -17,6 +17,40 @@ static class UnityFiles
         ".assets", ".bundle", ".unity3d", ".assetbundle", ".ab"
     };
 
+    public static string? FindManagedFolder(string input)
+    {
+        var full = Path.GetFullPath(input);
+        var directory = Directory.Exists(full) ? full : Path.GetDirectoryName(full);
+        for (var depth = 0; depth < 6 && !string.IsNullOrEmpty(directory); depth++)
+        {
+            var beside = Path.Combine(directory, "Managed");
+            if (ContainsAssemblies(beside))
+                return beside;
+
+            try
+            {
+                foreach (var dataDirectory in Directory.EnumerateDirectories(directory, "*_Data"))
+                {
+                    var managed = Path.Combine(dataDirectory, "Managed");
+                    if (ContainsAssemblies(managed))
+                        return managed;
+                }
+            }
+            catch (IOException)
+            {
+                // A parent folder the process cannot list is not a game directory.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // See above.
+            }
+
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        return null;
+    }
+
     public static string RootOf(string input)
     {
         var full = Path.GetFullPath(input);
@@ -50,6 +84,27 @@ static class UnityFiles
 
         files.Sort(StringComparer.OrdinalIgnoreCase);
         return files;
+    }
+
+    public static string BackupSibling(string source)
+    {
+        var directory = Path.GetDirectoryName(source) ?? "";
+        var name = Path.GetFileName(source);
+        var extension = Path.GetExtension(name);
+        var backupName = extension.Length == 0
+            ? name + "_BAK"
+            : string.Concat(name.AsSpan(0, name.Length - extension.Length), "_BAK", extension);
+        return Path.Combine(directory, backupName);
+    }
+
+    public static void ReplaceWithBackup(string source, string patchedTemp)
+    {
+        var backup = BackupSibling(source);
+        if (string.Equals(Path.GetFullPath(backup), Path.GetFullPath(source), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Refusing to replace the asset with itself.");
+        if (!File.Exists(backup))
+            File.Copy(source, backup, false);
+        File.Move(patchedTemp, source, true);
     }
 
     public static string Relative(string root, string fullPath) =>
@@ -120,6 +175,22 @@ static class UnityFiles
         }
     }
 
+    static bool ContainsAssemblies(string directory)
+    {
+        try
+        {
+            return Directory.Exists(directory) && Directory.EnumerateFiles(directory, "*.dll").Any();
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     static bool IsIgnored(string root, string file)
     {
         var relative = Path.GetRelativePath(root, file);
@@ -135,7 +206,9 @@ static class UnityFiles
             }
         }
 
-        return false;
+        var fileName = Path.GetFileNameWithoutExtension(file);
+        return fileName.EndsWith("_BAK", StringComparison.OrdinalIgnoreCase)
+            || fileName.EndsWith("_trans", StringComparison.OrdinalIgnoreCase);
     }
 
     public static (string Container, string? InternalPath) SplitAssetPath(string assetPath)

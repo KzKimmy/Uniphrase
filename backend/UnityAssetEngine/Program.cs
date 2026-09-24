@@ -18,7 +18,7 @@ public static class Program
                 {
                     type = "help",
                     message = "unity-core-engine extract --input <file-or-folder> --output <json> [--classdata <tpk>]\n" +
-                              "unity-core-engine repack --input <file-or-folder> --translations <json> --output <folder> [--classdata <tpk>]\n" +
+                              "unity-core-engine repack --input <file-or-folder> --translations <json> [--classdata <tpk>]\n" +
                               "unity-core-engine version"
                 });
                 return args.Length == 0 ? 1 : 0;

@@ -25,6 +25,7 @@ static class AssetExtractor
         string? lastError = null;
 
         using var host = new ClassPackageHost(options.ClassData);
+        host.UseGameScripts(input);
         if (!host.PackageLoaded)
             EngineIo.Warning("classdata.tpk was not loaded. Files without a type tree will be skipped.");
 

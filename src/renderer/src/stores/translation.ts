@@ -1,7 +1,7 @@
 import type { EngineEntry, EngineEvent, EngineProbe } from '@shared/contracts'
-import { demoEntries, stressEntries } from '@renderer/data/demo'
 import { getApi, isDesktop } from '@renderer/lib/bridge'
 import { assignIds, normalizeEntries, toEngineEntries } from '@renderer/lib/entries'
+import { sameAsTarget } from '@renderer/lib/language'
 import { applyReplace, type ReplaceOptions } from '@renderer/lib/replace'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
@@ -12,7 +12,7 @@ export type StatusFilter = 'all' | 'missing' | 'translated'
 export type TypeFilter = 'all' | 'TextAsset' | 'MonoBehaviour'
 
 export interface TaskState {
-  kind: 'extract' | 'repack'
+  kind: 'extract' | 'repack' | 'translate'
   progress: number
   message: string
   running: boolean
@@ -54,6 +54,7 @@ export const useTranslationStore = defineStore('translation', () => {
   const settingsOpen = ref(false)
   const replaceOpen = ref(false)
   const task = ref<TaskState | null>(null)
+  const translatingId = ref<string | null>(null)
   const engine = ref<EngineProbe>({
     ok: false,
     path: '',
@@ -70,6 +71,7 @@ export const useTranslationStore = defineStore('translation', () => {
   let editing = false
   let editBaseline: string | null = null
   let toastTimer = 0
+  let aiCancelled = false
 
   const assets = computed<AssetGroup[]>(() => {
     const groups = new Map<string, AssetGroup>()
@@ -346,7 +348,7 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   function onEngineEvent(event: EngineEvent): void {
-    if (!task.value || !task.value.running) return
+    if (!task.value || !task.value.running || task.value.kind === 'translate') return
     if (event.type === 'progress') {
       task.value = {
         ...task.value,
@@ -450,13 +452,8 @@ export const useTranslationStore = defineStore('translation', () => {
       if (!source) return
       sourcePath.value = source
     }
-    const outputDir = await getApi().selectPath({
-      kind: 'directory',
-      title: 'Select the patched output folder'
-    })
-    if (!outputDir) return
     startTask('repack', 'Starting repack…')
-    const result = await getApi().repack(source, toEngineEntries(entries.value), outputDir)
+    const result = await getApi().repack(source, toEngineEntries(entries.value))
     if (!result.ok) {
       failTask(result.message)
       return
@@ -466,7 +463,207 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function cancelTask(): Promise<void> {
+    if (task.value?.kind === 'translate') {
+      aiCancelled = true
+      await getApi().cancelAi()
+      return
+    }
     await getApi().cancelEngine()
+  }
+
+  function isRateLimit(message: string): boolean {
+    return /429|rate limit|quota|resource exhausted/i.test(message)
+  }
+
+  async function waitForAi(ms: number): Promise<boolean> {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      if (aiCancelled) return false
+      await new Promise((resolve) => window.setTimeout(resolve, 250))
+    }
+    return !aiCancelled
+  }
+
+  async function translateWithAi(scope: 'filtered' | 'all'): Promise<void> {
+    if (task.value?.running || entries.value.length === 0) return
+    commitEdit(false)
+    const empty = targetEntries(scope).filter((entry) => entry.translation.trim().length === 0 && entry.original.trim().length > 0)
+    if (empty.length === 0) {
+      showToast(scope === 'filtered' ? 'No empty strings in the current view' : 'No empty strings to translate')
+      return
+    }
+
+    const language = (await getApi().getSettings()).aiLanguage.trim() || 'Thai'
+    aiCancelled = false
+    const before = JSON.stringify(currentMap())
+    let applied = 0
+    let skipped = 0
+    const targets = empty.filter((entry) => {
+      if (!sameAsTarget(entry.original, language)) return true
+      entry.translation = entry.original
+      skipped += 1
+      return false
+    })
+    const remember = (): void => {
+      if (applied === 0 && skipped === 0) return
+      pushHistory(before)
+      dirty.value = true
+      revision.value += 1
+      recomputeView()
+    }
+    if (targets.length === 0) {
+      remember()
+      showToast(`Skipped ${skipped} strings already in ${language}`)
+      return
+    }
+    if (skipped > 0) {
+      dirty.value = true
+      recomputeView()
+    }
+
+    startTask('translate', `Translating 0 / ${targets.length}`)
+    let failed = 0
+    let lastError = ''
+    let pauseMs = 0
+    const batchSize = 8
+    try {
+      for (let index = 0; index < targets.length; ) {
+        if (aiCancelled) break
+        if (pauseMs > 0 && !(await waitForAi(pauseMs))) break
+        const slice = targets.slice(index, index + batchSize)
+        task.value = {
+          kind: 'translate',
+          progress: Math.round((index / targets.length) * 100),
+          message: `Translating ${index} / ${targets.length}`,
+          running: true,
+          error: ''
+        }
+        let result = await getApi().translateAi(slice.map((entry) => ({ id: entry.id, text: entry.original })))
+        let waits = 0
+        while (!aiCancelled && result.message !== 'Translation cancelled.' && isRateLimit(result.message) && waits < 4) {
+          waits += 1
+          pauseMs = 15_000
+          const waitMs = 20_000 * waits
+          task.value = {
+            kind: 'translate',
+            progress: Math.round((index / targets.length) * 100),
+            message: `API limit reached. Waiting ${Math.round(waitMs / 1000)}s…`,
+            running: true,
+            error: ''
+          }
+          if (!(await waitForAi(waitMs))) break
+          result = await getApi().translateAi(slice.map((entry) => ({ id: entry.id, text: entry.original })))
+        }
+        if (aiCancelled || result.message === 'Translation cancelled.') break
+        if (!result.ok || !result.items) {
+          failed += slice.length
+          lastError = result.message
+          if (!/json|no translations|cut off|empty response/i.test(result.message)) {
+            remember()
+            failTask(applied > 0 ? `${result.message} ${applied} strings were kept.` : result.message)
+            return
+          }
+          index += batchSize
+          continue
+        }
+        const beforeCount = applied
+        for (const item of result.items) {
+          const entry = byId.get(item.id)
+          if (!entry || item.translation.length === 0 || entry.translation === item.translation) continue
+          entry.translation = item.translation
+          applied += 1
+        }
+        if (applied > beforeCount) {
+          dirty.value = true
+          revision.value += 1
+          recomputeView()
+        }
+        index += batchSize
+      }
+    } catch (error) {
+      remember()
+      failTask(error instanceof Error ? error.message : 'Translation failed.')
+      return
+    }
+
+    remember()
+    if (aiCancelled) {
+      failTask(applied > 0 ? `Stopped after ${applied} strings.` : 'Translation cancelled.')
+      return
+    }
+    if (applied === 0 && failed > 0) {
+      failTask(lastError || 'Translation failed.')
+      return
+    }
+    await finishSoon()
+    const parts = [`Translated ${applied} strings`]
+    if (skipped > 0) parts.push(`skipped ${skipped} already in ${language}`)
+    if (failed > 0) parts.push(`${failed} failed`)
+    showToast(parts.join(', '))
+  }
+
+  async function refreshAssets(): Promise<void> {
+    if (task.value?.running) return
+    const input = sourcePath.value
+    if (!input) {
+      showToast('Open a Unity folder first')
+      return
+    }
+    if (dirty.value && entries.value.length > 0 && !window.confirm('Reload assets from the game folder? Unsaved edits in this workspace will be replaced.')) {
+      return
+    }
+    startTask('extract', 'Refreshing assets…')
+    const result = await getApi().extract(input)
+    if (!result.ok || !result.entries) {
+      failTask(result.message)
+      return
+    }
+    setDocument(result.entries, { sourcePath: input, projectPath: projectPath.value, dirty: false })
+    await finishSoon()
+    showToast(result.message)
+  }
+
+  async function translateRow(id: string): Promise<void> {
+    if (task.value?.running || translatingId.value) return
+    const entry = byId.get(id)
+    if (!entry || entry.original.trim().length === 0) {
+      showToast('This row has no text to translate')
+      return
+    }
+    commitEdit(false)
+    const language = (await getApi().getSettings()).aiLanguage.trim() || 'Thai'
+    if (sameAsTarget(entry.original, language)) {
+      if (entry.translation !== entry.original) {
+        pushHistory(JSON.stringify(currentMap()))
+        entry.translation = entry.original
+        dirty.value = true
+        revision.value += 1
+        recomputeView()
+      }
+      showToast(`Already in ${language}`)
+      return
+    }
+    translatingId.value = id
+    try {
+      const result = await getApi().translateAi([{ id: entry.id, text: entry.original }])
+      const translation = result.items?.find((item) => item.id === entry.id)?.translation ?? ''
+      if (!result.ok || translation.length === 0) {
+        showToast(result.message || 'Translation failed.')
+        return
+      }
+      if (translation !== entry.translation) {
+        pushHistory(JSON.stringify(currentMap()))
+        entry.translation = translation
+        dirty.value = true
+        revision.value += 1
+        recomputeView()
+      }
+      showToast('Line translated')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Translation failed.')
+    } finally {
+      translatingId.value = null
+    }
   }
 
   async function saveProject(saveAs = false): Promise<void> {
@@ -506,16 +703,6 @@ export const useTranslationStore = defineStore('translation', () => {
     }
   }
 
-  function loadDemo(): void {
-    setDocument(demoEntries(), { sourcePath: '', projectPath: '', dirty: true })
-    showToast('Demo workspace loaded')
-  }
-
-  function loadStress(): void {
-    setDocument(stressEntries(5000), { sourcePath: '', projectPath: '', dirty: true })
-    showToast('Loaded 5,000 sample lines')
-  }
-
   return {
     entries,
     rows,
@@ -538,6 +725,7 @@ export const useTranslationStore = defineStore('translation', () => {
     settingsOpen,
     replaceOpen,
     task,
+    translatingId,
     engine,
     undoCount,
     redoCount,
@@ -570,9 +758,10 @@ export const useTranslationStore = defineStore('translation', () => {
     extractFrom,
     repack,
     cancelTask,
+    translateWithAi,
+    translateRow,
+    refreshAssets,
     saveProject,
-    openProject,
-    loadDemo,
-    loadStress
+    openProject
   }
 })

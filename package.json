@@ -12,7 +12,8 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.web.json",
     "engine:build": "dotnet build backend/UnityAssetEngine/UnityAssetEngine.csproj -c Release",
     "engine:publish": "dotnet publish backend/UnityAssetEngine/UnityAssetEngine.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o resources/bin",
-    "pack": "electron-vite build && electron-builder --win portable"
+    "portable": "npm run engine:publish && electron-vite build && electron-builder --win --dir",
+    "pack": "npm run engine:publish && electron-vite build && electron-builder --win portable"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

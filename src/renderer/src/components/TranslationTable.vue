@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import { Copy, Search, Trash2 } from 'lucide-vue-next'
+import { Copy, LoaderCircle, Search, Sparkles, Trash2 } from 'lucide-vue-next'
 import { computed, nextTick, ref } from 'vue'
 import { useTranslationStore, type QueryMode, type StatusFilter, type TypeFilter } from '@renderer/stores/translation'
 
@@ -112,7 +112,7 @@ async function focusRow(index: number): Promise<void> {
     </div>
     <p v-if="store.regexError" class="border-b border-zinc-800 px-3 py-1.5 text-[12px] text-amber-300">{{ store.regexError }}</p>
 
-    <div class="grid h-9 shrink-0 grid-cols-[28px_minmax(128px,180px)_minmax(0,1fr)_minmax(0,1.1fr)_56px] items-center gap-3 border-b border-zinc-800 px-3 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+    <div class="grid h-9 shrink-0 grid-cols-[28px_minmax(128px,180px)_minmax(0,1fr)_minmax(0,1.1fr)_84px] items-center gap-3 border-b border-zinc-800 px-3 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
       <span />
       <span>Key</span>
       <span>Original</span>
@@ -127,18 +127,10 @@ async function focusRow(index: number): Promise<void> {
       <p class="max-w-md text-[13px] leading-5 text-zinc-500">
         {{
           store.entries.length === 0
-            ? 'Extract a Unity .assets or .bundle file, open a translation JSON project, or load the demo workspace.'
+            ? 'Extract a Unity game folder, an .assets or .bundle file, or open a translation JSON project.'
             : 'Clear the search or switch filters to see the rest of the workspace.'
         }}
       </p>
-      <div v-if="store.entries.length === 0" class="mt-2 flex gap-2">
-        <button class="rounded-md bg-zinc-100 px-3 py-1.5 text-[12px] font-medium text-zinc-950" @click="store.loadDemo()">
-          Load demo
-        </button>
-        <button class="rounded-md border border-zinc-800 px-3 py-1.5 text-[12px] text-zinc-300" @click="store.loadStress()">
-          Load 5,000 lines
-        </button>
-      </div>
     </div>
 
     <div v-else ref="parentRef" class="min-h-0 flex-1 overflow-auto">
@@ -146,7 +138,7 @@ async function focusRow(index: number): Promise<void> {
         <div
           v-for="virtualRow in virtualRows"
           :key="store.rows[virtualRow.index].id"
-          class="absolute left-0 top-0 grid w-full grid-cols-[28px_minmax(128px,180px)_minmax(0,1fr)_minmax(0,1.1fr)_56px] gap-3 border-b border-zinc-800/80 px-3"
+          class="absolute left-0 top-0 grid w-full grid-cols-[28px_minmax(128px,180px)_minmax(0,1fr)_minmax(0,1.1fr)_84px] gap-3 border-b border-zinc-800/80 px-3"
           :class="store.selectedId === store.rows[virtualRow.index].id ? 'bg-zinc-900/80' : 'hover:bg-zinc-900/40'"
           :style="{ height: '120px', transform: `translateY(${virtualRow.start}px)` }"
           @click="store.selectedId = store.rows[virtualRow.index].id"
@@ -186,6 +178,15 @@ async function focusRow(index: number): Promise<void> {
             />
           </div>
           <div class="flex items-start gap-1 pt-3">
+            <button
+              class="row-btn"
+              title="Translate this line"
+              :disabled="store.translatingId !== null"
+              @click.stop="store.translateRow(store.rows[virtualRow.index].id)"
+            >
+              <LoaderCircle v-if="store.translatingId === store.rows[virtualRow.index].id" class="h-3.5 w-3.5 animate-spin" />
+              <Sparkles v-else class="h-3.5 w-3.5" />
+            </button>
             <button class="row-btn" title="Copy original into translation" @click.stop="store.copyOriginal(store.rows[virtualRow.index].id)">
               <Copy class="h-3.5 w-3.5" />
             </button>
@@ -222,8 +223,12 @@ async function focusRow(index: number): Promise<void> {
   color: var(--color-zinc-500);
 }
 
-.row-btn:hover {
+.row-btn:hover:not(:disabled) {
   background: var(--color-zinc-800);
   color: var(--color-zinc-100);
+}
+
+.row-btn:disabled {
+  opacity: 0.35;
 }
 </style>

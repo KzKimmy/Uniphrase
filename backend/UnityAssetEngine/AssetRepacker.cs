@@ -11,15 +11,11 @@ static class AssetRepacker
     {
         var input = EngineOptions.Require(options.Input, "--input");
         var translationsPath = EngineOptions.Require(options.Translations, "--translations");
-        var output = EngineOptions.Require(options.Output, "--output");
 
         if (!File.Exists(translationsPath))
             throw new FileNotFoundException("Translation file was not found.", translationsPath);
 
         var root = UnityFiles.RootOf(input);
-        var outputFull = Path.GetFullPath(output);
-        if (string.Equals(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar), outputFull.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Output folder must be different from the original assets folder.");
 
         List<TranslationEntry> entries;
         using (var stream = File.OpenRead(translationsPath))
@@ -31,8 +27,7 @@ static class AssetRepacker
         var pending = entries.Where(entry => entry.HasReplacement).ToList();
         if (pending.Count == 0)
         {
-            Directory.CreateDirectory(outputFull);
-            EngineIo.Done("No translated strings to write. Empty translations keep the original text.", 0, outputFull);
+            EngineIo.Done("No translated strings to write. Empty translations keep the original text.", 0, root);
             return 0;
         }
 
@@ -41,8 +36,9 @@ static class AssetRepacker
 
         EngineIo.Progress(4, $"Applying {pending.Count} translations across {groups.Count} files.");
         using var host = new ClassPackageHost(options.ClassData);
+        host.UseGameScripts(input);
         var applied = 0;
-        var written = 0;
+        var written = new List<string>();
         var failures = 0;
 
         for (var i = 0; i < groups.Count; i++)
@@ -51,23 +47,23 @@ static class AssetRepacker
             var start = 8 + (int)Math.Round(i * 80.0 / groups.Count);
             var container = group.Key;
             EngineIo.Progress(start, $"Patching {container}");
+            var patched = Path.Combine(Path.GetTempPath(), "uniphrase-" + Guid.NewGuid().ToString("N"));
             try
             {
                 var source = UnityFiles.ResolveInside(root, container);
                 if (!File.Exists(source))
                     throw new FileNotFoundException("Original asset was not found.", source);
 
-                var destination = Path.Combine(outputFull, container.Replace('/', Path.DirectorySeparatorChar));
-                var destinationDir = Path.GetDirectoryName(destination);
-                if (!string.IsNullOrEmpty(destinationDir))
-                    Directory.CreateDirectory(destinationDir);
-
                 var count = UnityFiles.IsBundle(source)
-                    ? PatchBundle(host, source, destination, group)
-                    : PatchLoose(host, source, destination, group);
-                applied += count;
+                    ? PatchBundle(host, source, patched, group)
+                    : PatchLoose(host, source, patched, group);
+                host.ReleaseFiles();
                 if (count > 0)
-                    written++;
+                {
+                    UnityFiles.ReplaceWithBackup(source, patched);
+                    applied += count;
+                    written.Add(Path.GetFileName(source));
+                }
             }
             catch (Exception ex)
             {
@@ -76,11 +72,13 @@ static class AssetRepacker
             }
             finally
             {
+                if (File.Exists(patched))
+                    File.Delete(patched);
                 host.ReleaseFiles();
             }
         }
 
-        if (written == 0)
+        if (written.Count == 0)
         {
             EngineIo.Error(failures > 0
                 ? "Repack failed for every file."
@@ -88,7 +86,7 @@ static class AssetRepacker
             return 1;
         }
 
-        EngineIo.Done($"Patched {applied} strings into {written} files.", applied, outputFull, applied);
+        EngineIo.Done($"Updated {string.Join(", ", written)}. Originals were kept as *_BAK.", applied, root, applied);
         return 0;
     }
 

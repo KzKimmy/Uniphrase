@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search } from 'lucide-vue-next'
+import { RefreshCw, Search } from 'lucide-vue-next'
 import { assetFileName, assetHint } from '@renderer/lib/entries'
 import { useTranslationStore } from '@renderer/stores/translation'
 
@@ -10,7 +10,17 @@ const store = useTranslationStore()
   <aside class="flex h-full w-72 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
     <div class="flex items-center justify-between px-3 pt-3">
       <div class="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">Assets</div>
-      <div class="font-mono text-[10px] text-zinc-600">{{ store.assets.length }}</div>
+      <div class="flex items-center gap-1.5">
+        <button
+          class="refresh"
+          title="Refresh assets"
+          :disabled="!store.sourcePath || store.task?.running"
+          @click="store.refreshAssets()"
+        >
+          <RefreshCw class="h-3.5 w-3.5" />
+        </button>
+        <div class="font-mono text-[10px] text-zinc-600">{{ store.assets.length }}</div>
+      </div>
     </div>
 
     <div class="px-3 py-2">
@@ -60,7 +70,7 @@ const store = useTranslationStore()
       </button>
 
       <div v-if="store.assets.length === 0" class="px-2 py-6 text-[12px] leading-5 text-zinc-600">
-        Extract a Unity file or load the demo workspace to see assets here.
+        Extract a Unity file to see assets here.
       </div>
     </div>
   </aside>
@@ -73,5 +83,24 @@ const store = useTranslationStore()
   border-radius: 8px;
   padding: 8px 8px 10px;
   text-align: left;
+}
+
+.refresh {
+  display: flex;
+  height: 22px;
+  width: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--color-zinc-500);
+}
+
+.refresh:hover:not(:disabled) {
+  background: var(--color-zinc-800);
+  color: var(--color-zinc-100);
+}
+
+.refresh:disabled {
+  opacity: 0.35;
 }
 </style>

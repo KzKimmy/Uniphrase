@@ -26,6 +26,35 @@ export interface SelectOptions {
 export interface Settings {
   enginePath: string
   classDataPath: string
+  aiBaseUrl: string
+  aiApiKey: string
+  aiModel: string
+  aiLanguage: string
+}
+
+export const defaultSettings: Settings = {
+  enginePath: '',
+  classDataPath: '',
+  aiBaseUrl: 'https://api.openai.com/v1',
+  aiApiKey: '',
+  aiModel: 'gpt-4o-mini',
+  aiLanguage: 'Thai'
+}
+
+export interface AiTextItem {
+  id: string
+  text: string
+}
+
+export interface AiTranslation {
+  id: string
+  translation: string
+}
+
+export interface AiResult {
+  ok: boolean
+  message: string
+  items?: AiTranslation[]
 }
 
 export interface EngineProbe {
@@ -79,8 +108,11 @@ export interface UniphraseApi {
   writeTextFile(path: string, contents: string): Promise<void>
   openTextFile(options: OpenTextOptions): Promise<{ path: string; contents: string } | null>
   extract(input: string): Promise<EngineResult>
-  repack(input: string, entries: EngineEntry[], outputDir: string): Promise<EngineResult>
+  repack(input: string, entries: EngineEntry[]): Promise<EngineResult>
+  translateAi(items: AiTextItem[]): Promise<AiResult>
+  testAi(): Promise<AiResult>
   cancelEngine(): Promise<void>
+  cancelAi(): Promise<void>
   onEngineEvent(listener: (event: EngineEvent) => void): () => void
   getSettings(): Promise<Settings>
   setSettings(settings: Settings): Promise<Settings>

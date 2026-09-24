@@ -1,7 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { EngineEntry, FileFilter, OpenTextOptions, SaveTextOptions, SelectOptions, SessionData, Settings } from '@shared/contracts'
+import type { AiTextItem, EngineEntry, FileFilter, OpenTextOptions, SaveTextOptions, SelectOptions, SessionData, Settings } from '@shared/contracts'
+import { defaultSettings } from '@shared/contracts'
+import { cancelAi, testAi, translateAi } from './ai'
 import { cancelEngine, extractAssets, probeEngine, readJsonFile, repackAssets, writeJsonAtomic } from './engine'
 
 function settingsPath(): string {
@@ -16,8 +18,23 @@ function loadSettings(): Settings {
   const stored = readJsonFile<Partial<Settings>>(settingsPath(), {})
   return {
     enginePath: typeof stored.enginePath === 'string' ? stored.enginePath : '',
-    classDataPath: typeof stored.classDataPath === 'string' ? stored.classDataPath : ''
+    classDataPath: typeof stored.classDataPath === 'string' ? stored.classDataPath : '',
+    aiBaseUrl: typeof stored.aiBaseUrl === 'string' && stored.aiBaseUrl.trim() ? stored.aiBaseUrl : defaultSettings.aiBaseUrl,
+    aiApiKey: typeof stored.aiApiKey === 'string' ? stored.aiApiKey : '',
+    aiModel: typeof stored.aiModel === 'string' && stored.aiModel.trim() ? stored.aiModel : defaultSettings.aiModel,
+    aiLanguage: typeof stored.aiLanguage === 'string' && stored.aiLanguage.trim() ? stored.aiLanguage : defaultSettings.aiLanguage
   }
+}
+
+function asAiItems(value: unknown): AiTextItem[] {
+  if (!Array.isArray(value)) throw new Error('Translations must be an array.')
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : ''
+    const text = typeof row.text === 'string' ? row.text : ''
+    return id && text ? [{ id, text }] : []
+  })
 }
 
 function asPath(value: unknown, label: string): string {
@@ -106,11 +123,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     }
   })
 
-  ipcMain.handle('engine:repack', async (event, input: unknown, entries: unknown, outputDir: unknown) => {
+  ipcMain.handle('engine:repack', async (event, input: unknown, entries: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow()
     if (!win) return { ok: false, message: 'Window is not available.' }
     try {
-      return await repackAssets(win, loadSettings(), asPath(input, 'input'), asEntries(entries), asPath(outputDir, 'output'))
+      return await repackAssets(win, loadSettings(), asPath(input, 'input'), asEntries(entries))
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Repack failed.' }
     }
@@ -120,13 +137,30 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     cancelEngine()
   })
 
+  ipcMain.handle('ai:translate', async (_event, items: unknown) => {
+    try {
+      return await translateAi(loadSettings(), asAiItems(items))
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Translation failed.' }
+    }
+  })
+
+  ipcMain.handle('ai:test', async () => testAi(loadSettings()))
+
+  ipcMain.handle('ai:cancel', async () => {
+    cancelAi()
+  })
+
   ipcMain.handle('settings:get', async () => loadSettings())
 
   ipcMain.handle('settings:set', async (_event, settings: Settings) => {
-    const next: Settings = {
-      enginePath: typeof settings?.enginePath === 'string' ? settings.enginePath : '',
-      classDataPath: typeof settings?.classDataPath === 'string' ? settings.classDataPath : ''
-    }
+    const next = loadSettings()
+    next.enginePath = typeof settings?.enginePath === 'string' ? settings.enginePath : ''
+    next.classDataPath = typeof settings?.classDataPath === 'string' ? settings.classDataPath : ''
+    next.aiBaseUrl = typeof settings?.aiBaseUrl === 'string' ? settings.aiBaseUrl : next.aiBaseUrl
+    next.aiApiKey = typeof settings?.aiApiKey === 'string' ? settings.aiApiKey : ''
+    next.aiModel = typeof settings?.aiModel === 'string' ? settings.aiModel : next.aiModel
+    next.aiLanguage = typeof settings?.aiLanguage === 'string' ? settings.aiLanguage : next.aiLanguage
     writeJsonAtomic(settingsPath(), next)
     return next
   })

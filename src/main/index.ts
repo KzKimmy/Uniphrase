@@ -34,7 +34,7 @@ function createWindow(): BrowserWindow {
   })
 
   if (!process.env.ELECTRON_RENDERER_URL) {
-    win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    win.webContents.session.webRequest.onHeadersReceived({ urls: ['file://*/*'] }, (details, callback) => {
       callback({
         responseHeaders: {
           ...details.responseHeaders,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FolderOpen, Languages, Minus, Moon, Package, Redo2, Replace, Save, Settings, Square, Sun, Undo2, X } from 'lucide-vue-next'
+import { FolderOpen, Languages, Minus, Moon, Package, Redo2, Replace, Save, Settings, Sparkles, Square, Sun, Undo2, X } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { assetFileName } from '@renderer/lib/entries'
 import { getApi } from '@renderer/lib/bridge'
@@ -8,6 +8,7 @@ import { useTranslationStore } from '@renderer/stores/translation'
 
 const store = useTranslationStore()
 const extractMenu = ref(false)
+const translateMenu = ref(false)
 const api = getApi()
 const crumb = computed(() => {
   if (store.sourcePath) return { title: assetFileName(store.sourcePath), detail: store.sourcePath }
@@ -19,6 +20,11 @@ const crumb = computed(() => {
 async function extract(kind: 'file' | 'directory'): Promise<void> {
   extractMenu.value = false
   await store.extractFrom(kind)
+}
+
+function translate(scope: 'filtered' | 'all'): void {
+  translateMenu.value = false
+  void store.translateWithAi(scope)
 }
 </script>
 
@@ -62,6 +68,18 @@ async function extract(kind: 'file' | 'directory'): Promise<void> {
         <Package class="h-3.5 w-3.5" />
         Repack
       </button>
+
+      <div class="relative">
+        <button class="secondary-btn" :disabled="store.entries.length === 0 || store.task?.running" @click="translateMenu = !translateMenu">
+          <Sparkles class="h-3.5 w-3.5" />
+          Translate
+        </button>
+        <div v-if="translateMenu" class="fixed inset-0 z-20" @click="translateMenu = false" />
+        <div v-if="translateMenu" class="absolute right-0 top-10 z-30 w-56 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 py-1 shadow-2xl">
+          <button class="menu-item" @click="translate('filtered')">Empty rows in this view</button>
+          <button class="menu-item" @click="translate('all')">All empty strings</button>
+        </div>
+      </div>
 
       <div class="mx-1 h-5 w-px bg-zinc-800" />
 

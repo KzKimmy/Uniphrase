@@ -6,6 +6,7 @@ namespace Uniphrase.Engine;
 sealed class ClassPackageHost : IDisposable
 {
     readonly AssetsManager _manager = new();
+    IMonoBehaviourTemplateGenerator? _scripts;
     string? _databaseVersion;
 
     public ClassPackageHost(string? requestedPath)
@@ -29,6 +30,24 @@ sealed class ClassPackageHost : IDisposable
     public AssetsManager Manager => _manager;
     public bool PackageLoaded { get; }
     public string? ClassDataPath { get; }
+    public string? ManagedPath { get; private set; }
+
+    public void UseGameScripts(string input)
+    {
+        var managed = UnityFiles.FindManagedFolder(input);
+        if (managed == null)
+        {
+            EngineIo.Warning("No Managed folder was found. Script text is skipped when a game strips type trees.");
+            return;
+        }
+
+        _scripts?.Dispose();
+        _scripts = new MonoCecilTempGenerator(managed);
+        _manager.MonoTempGenerator = _scripts;
+        _manager.UseMonoTemplateFieldCache = true;
+        ManagedPath = managed;
+        EngineIo.Emit(new { type = "log", message = $"Reading scripts from {managed}" });
+    }
 
     public void EnsureDatabase(AssetsFile file)
     {
@@ -93,5 +112,10 @@ sealed class ClassPackageHost : IDisposable
         return null;
     }
 
-    public void Dispose() => _manager.UnloadAll(true);
+    public void Dispose()
+    {
+        _manager.UnloadAll(true);
+        _scripts?.Dispose();
+        _scripts = null;
+    }
 }
