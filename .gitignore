@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+release
+.DS_Store
+*.user
+*.suo
+.vs
+backend/**/bin
+backend/**/obj
+resources/bin/*
+!resources/bin/.gitkeep

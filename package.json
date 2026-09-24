@@ -1,0 +1,65 @@
+{
+  "name": "uniphrase",
+  "version": "1.0.0",
+  "description": "Desktop workbench for extracting, translating, and repacking Unity asset text.",
+  "author": "Uniphrase",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json",
+    "engine:build": "dotnet build backend/UnityAssetEngine/UnityAssetEngine.csproj -c Release",
+    "engine:publish": "dotnet publish backend/UnityAssetEngine/UnityAssetEngine.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o resources/bin",
+    "pack": "electron-vite build && electron-builder --win portable"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@tanstack/vue-virtual": "^3.13.39",
+    "lucide-vue-next": "^1.0.0",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.2",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "electron": "^44.4.5",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9",
+    "vite": "^7.3.6",
+    "vue-tsc": "^3.3.11",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.uniphrase.app",
+    "productName": "Uniphrase",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "unity-core-engine.exe",
+          "classdata.tpk"
+        ]
+      }
+    ],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "Uniphrase.exe"
+    }
+  }
+}
