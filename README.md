@@ -17,6 +17,25 @@ Uniphrase provides a streamlined workflow for extracting, editing, and repacking
 
 ---
 
+## Getting Started
+
+### 1. Download & Installation
+
+1. Navigate to the **Releases** section on GitHub.
+2. Download the latest installer or portable executable (`.zip` or `.exe`).
+3. Extract or install the package, then launch `Uniphrase.exe`.
+
+### 2. Basic Workflow
+
+1. **Select Asset File:** Click **Open Asset** in the top navigation bar and select the target Unity file (such as `resources.assets`, `sharedassets0.assets`, or specific asset bundles) inside your game directory.
+2. **Extract Strings:** Click **Extract** to scan the asset. All recognized text entries will appear in the translation grid.
+3. **Translate:**
+   - Double-click on any entry in the **Translated Text** column to edit text directly.
+   - Alternatively, click **Export JSON** to run batch translations through external tools or LLM APIs, then use **Import JSON** to update the grid.
+4. **Repack & Apply Patch:** Click **Build Patch** to generate the updated asset files. Replace the original game file with the generated output to verify your changes in-game.
+
+---
+
 ## Architecture Overview
 
 Uniphrase implements a hybrid sidecar architecture to separate interface rendering from compute-heavy binary serialization:
